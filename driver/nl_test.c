@@ -73,7 +73,7 @@ static int nltest_test_server(unsigned long arg)
 	struct tee_msg __user *user_msg = (struct tee_msg __user *)arg;
 	struct tee_msg *msg;
 
-	msg = kmalloc(sizeof(user_msg), GFP_KERNEL);
+	msg = kmalloc(sizeof(*user_msg), GFP_KERNEL);
 
 	if (copy_from_user(msg, user_msg, sizeof(*user_msg))) {
 		pr_err("Reading message failed\n");
