@@ -3,7 +3,7 @@
 #include <linux/netlink.h>
 #include <linux/skbuff.h>
 
-#define NETLINK_USER 31
+#define NETLINK_USER 20
 #define MAX_PAYLOAD 1024
 
 #define MAJOR_NUM 60
@@ -27,7 +27,8 @@ enum ioctls_cmds {
 };
 
 struct sock *nl_sk = NULL;
-struct tee_msg *waiting_msg = NULL;
+struct tee_msg rcvd_msg;
+int waiting_msg = 0;
 int server_pid = -1;
 
 DECLARE_WAIT_QUEUE_HEAD(nltest_queue);
@@ -80,14 +81,15 @@ static int nltest_test_server(unsigned long arg)
 	}
 pr_err("msg: %p data: %s\n", &user_msg->msg_data, msg->msg_data);
 
-	waiting_msg =	NULL;
+	waiting_msg = 0;
 	send_message(msg);
 
-	wait_event(nltest_queue, waiting_msg != NULL);
+	/* TODO: check if ack/return message is needed */
+	wait_event(nltest_queue, waiting_msg != 0);
 pr_err("msg: %p data: %s\n", msg->msg_data, msg->msg_data);
 
-	copy_to_user(user_msg, waiting_msg, sizeof(*waiting_msg));
-	waiting_msg =	NULL;
+	copy_to_user(user_msg, &rcvd_msg, sizeof(rcvd_msg));
+	waiting_msg = 0;
 	kfree(msg);
 
 	return 0;
@@ -170,7 +172,9 @@ static void nltest_input(struct sk_buff *skb)
 
 pr_err("msg: %p data: %s\n", msg->msg_data, msg->msg_data);
 
-	waiting_msg = msg;
+	/* TODO: check if ack pending */
+	memcpy(&rcvd_msg, msg, sizeof(*msg));
+	waiting_msg = 1;
 	wake_up(&nltest_queue);
 }
 
@@ -182,7 +186,8 @@ static int __init nltest_init(void)
 		.input = nltest_input,
 	};
 
-	printk("Entering: %s\n", __FUNCTION__);
+	pr_err("Entering: %s\n", __FUNCTION__);
+
 	nl_sk = netlink_kernel_create(&init_net, NETLINK_USER, &cfg);
 	if (!nl_sk)
 	{

@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 #include <linux/netlink.h>
 
-#define NETLINK_USER 31
+#define NETLINK_USER 20
 
 #define MAX_PAYLOAD 1024 /* maximum payload size*/
 
@@ -28,6 +28,22 @@ struct nlmsghdr *nlh = NULL;
 struct iovec iov;
 struct msghdr msg;
 
+static void send_message(struct tee_msg *msg_payload) {
+	memset(nlh, 0, NLMSG_SPACE(MAX_PAYLOAD));
+	nlh->nlmsg_len = NLMSG_SPACE(MAX_PAYLOAD);
+	nlh->nlmsg_pid = getpid();
+	nlh->nlmsg_flags = 0;
+
+	iov.iov_base = (void *)nlh;
+	iov.iov_len = nlh->nlmsg_len;
+	msg.msg_name = (void *)&dest_addr;
+	msg.msg_namelen = sizeof(dest_addr);
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	memcpy(NLMSG_DATA(nlh), msg_payload, sizeof(*msg_payload));
+	sendmsg(sock_fd, &msg, 0);
+}
+
 static int process_msg() {
 	struct tee_msg msg_payload;
 	char *msg_buf;
@@ -41,28 +57,11 @@ static int process_msg() {
 		printf("Server received test msg: %s\n", msg_buf);
 		free(msg_buf);
 
-	memset(&dest_addr, 0, sizeof(dest_addr));
-	dest_addr.nl_family = AF_NETLINK;
-	dest_addr.nl_pid = 0; /* For Linux Kernel */
-	dest_addr.nl_groups = 0; /* unicast */
+		msg_payload.msg_id = TEE_TEST_SERVER;
+		msg_payload.msg_data_len = 10;
+		strcpy(msg_payload.msg_data, "server: OK\n");
 
-	memset(nlh, 0, NLMSG_SPACE(MAX_PAYLOAD));
-	nlh->nlmsg_len = NLMSG_SPACE(MAX_PAYLOAD);
-	nlh->nlmsg_pid = getpid();
-	nlh->nlmsg_flags = 0;
-
-	iov.iov_base = (void *)nlh;
-	iov.iov_len = nlh->nlmsg_len;
-	msg.msg_name = (void *)&dest_addr;
-	msg.msg_namelen = sizeof(dest_addr);
-	msg.msg_iov = &iov;
-	msg.msg_iovlen = 1;
-
-	msg_payload.msg_id = TEE_TEST_SERVER;
-	msg_payload.msg_data_len = 10;
-	strcpy(msg_payload.msg_data, "server: OK\n");
-	memcpy(NLMSG_DATA(nlh), &msg_payload, sizeof(msg_payload));
-	sendmsg(sock_fd, &msg, 0);
+		send_message(&msg_payload);
 
 		break;
 	default:
@@ -93,23 +92,12 @@ int main()
 	dest_addr.nl_groups = 0; /* unicast */
 
 	nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(MAX_PAYLOAD));
-	memset(nlh, 0, NLMSG_SPACE(MAX_PAYLOAD));
-	nlh->nlmsg_len = NLMSG_SPACE(MAX_PAYLOAD);
-	nlh->nlmsg_pid = getpid();
-	nlh->nlmsg_flags = 0;
-
-	iov.iov_base = (void *)nlh;
-	iov.iov_len = nlh->nlmsg_len;
-	msg.msg_name = (void *)&dest_addr;
-	msg.msg_namelen = sizeof(dest_addr);
-	msg.msg_iov = &iov;
-	msg.msg_iovlen = 1;
 
 	msg_payload.msg_id = TEE_REGISTER_SERVER;
 	msg_payload.msg_data_len = 0;
-	memcpy(NLMSG_DATA(nlh), &msg_payload, sizeof(msg_payload));
 	printf("Registering server to the kernel\n");
-	sendmsg(sock_fd, &msg, 0);
+
+	send_message(&msg_payload);
 
 	while (1) {
 		printf("Waiting for message from kernel\n");
